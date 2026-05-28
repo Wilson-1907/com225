@@ -1,2 +1,8 @@
+__pycache__/
 .env
-__pycache__
+.venv/
+vectorstore/
+*.pkl
+*.faiss
+pdfs/
+pdfs-processed/
