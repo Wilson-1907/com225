@@ -1,91 +1,93 @@
 import os
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_community.document_loaders import PyPDFLoader
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
 from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_core.documents import Document
 
-# Create lectures folder if it doesn't exist
-LECTURES_FOLDER = "lectures"
-os.makedirs(LECTURES_FOLDER, exist_ok=True)
+# ==============================
+# PDF FOLDER
+# ==============================
 
-print("\n========== COM225 LECTURE INGESTION ==========\n")
+PDFS_FOLDER = "pdfs"
 
-# Read all text files from lectures folder
-all_texts = []
-text_files = [f for f in os.listdir(LECTURES_FOLDER) if f.endswith(('.txt', '.md'))]
+# Create folder if it doesn't exist
+os.makedirs(PDFS_FOLDER, exist_ok=True)
 
-if not text_files:
-    print("⚠️  No lecture files found!")
-    print(f"Please add .txt or .md files to the '{LECTURES_FOLDER}' folder")
-    print("\nExample file format:")
-    print("-" * 50)
-    print("File: linux_commands.txt")
-    print("Content:")
-    print("Linux Commands:")
-    print("ls - list directory contents")
-    print("cd - change directory")
-    print("pwd - print working directory")
-    print("-" * 50)
+print("\n========== COM225 PDF INGESTION ==========\n")
+
+# Find all PDFs
+pdf_files = [f for f in os.listdir(PDFS_FOLDER) if f.endswith(".pdf")]
+
+if not pdf_files:
+    print("⚠️ No PDF files found!")
+    print(f"Please add PDF files inside the '{PDFS_FOLDER}' folder.")
     exit(1)
 
-print(f"Found {len(text_files)} lecture files.\n")
+print(f"Found {len(pdf_files)} PDF files.\n")
 
-for file in text_files:
+# ==============================
+# LOAD PDFs
+# ==============================
+
+all_docs = []
+
+for file in pdf_files:
+
     try:
-        file_path = os.path.join(LECTURES_FOLDER, file)
-        print(f"Loading: {file}")
-        
-        with open(file_path, 'r', encoding='utf-8') as f:
-            content = f.read()
-        
-        all_texts.append({
-            "content": content,
-            "source": file
-        })
-        print(f"✓ Loaded {file}")
-        
-    except Exception as e:
-        print(f"✗ Failed: {file}")
-        print(f"  Error: {e}\n")
+        file_path = os.path.join(PDFS_FOLDER, file)
 
-print("\n========== SPLITTING INTO CHUNKS ==========\n")
+        print(f"Loading: {file}")
+
+        loader = PyPDFLoader(file_path)
+
+        docs = loader.load()
+
+        all_docs.extend(docs)
+
+        print(f"✓ SUCCESS: {file}")
+
+    except Exception as e:
+
+        print(f"✗ FAILED: {file}")
+        print(f"ERROR: {e}\n")
+
+# ==============================
+# SPLIT DOCUMENTS
+# ==============================
+
+print("\n========== SPLITTING DOCUMENTS ==========\n")
 
 splitter = RecursiveCharacterTextSplitter(
-    chunk_size=500,  # Smaller chunks = less memory
-    chunk_overlap=50,
-    separators=["\n\n", "\n", " ", ""]
+    chunk_size=500,
+    chunk_overlap=50
 )
 
-chunks = []
-for text_data in all_texts:
-    text_chunks = splitter.split_text(text_data["content"])
-    for chunk in text_chunks:
-        chunks.append({
-            "page_content": chunk,
-            "metadata": {"source_file": text_data["source"]}
-        })
+documents = splitter.split_documents(all_docs)
 
-print(f"Total chunks created: {len(chunks)}")
+print(f"Total chunks created: {len(documents)}")
+
+# ==============================
+# EMBEDDINGS
+# ==============================
 
 print("\n========== CREATING EMBEDDINGS ==========\n")
-print("Loading lightweight embedding model...")
 
-# Use the smallest possible embedding model
 embeddings = HuggingFaceEmbeddings(
     model_name="sentence-transformers/all-MiniLM-L6-v2",
-    model_kwargs={'device': 'cpu'},
-    encode_kwargs={'normalize_embeddings': True}
+    model_kwargs={"device": "cpu"},
+    encode_kwargs={"normalize_embeddings": True}
 )
 
-# Convert to FAISS format
-from langchain.schema import Document
-documents = [
-    Document(page_content=chunk["page_content"], metadata=chunk["metadata"])
-    for chunk in chunks
-]
+# ==============================
+# CREATE VECTOR DATABASE
+# ==============================
 
 vectorstore = FAISS.from_documents(documents, embeddings)
+
 vectorstore.save_local("vectorstore")
 
 print("\n✅ SUCCESS!")
-print(f"Vector database created from {len(text_files)} lecture files")
+print("Vector database created successfully.")
 print("Saved in: vectorstore/")
+
